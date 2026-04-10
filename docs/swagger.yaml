@@ -1,0 +1,123 @@
+basePath: /
+definitions:
+  model.JobResponse:
+    properties:
+      created_at:
+        type: string
+      error:
+        type: string
+      file_name:
+        type: string
+      file_size:
+        type: integer
+      id:
+        type: string
+      result:
+        type: string
+      retry_count:
+        type: integer
+      status:
+        $ref: '#/definitions/model.JobStatus'
+      updated_at:
+        type: string
+    type: object
+  model.JobStatus:
+    enum:
+    - pending
+    - processing
+    - completed
+    - failed
+    type: string
+    x-enum-varnames:
+    - StatusPending
+    - StatusProcessing
+    - StatusCompleted
+    - StatusFailed
+host: localhost:8080
+info:
+  contact: {}
+  description: This is a job processing queue API
+  title: Job Queue API
+  version: "1.0"
+paths:
+  /health:
+    get:
+      description: Returns an OK status if the server is running
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Check server health
+  /job/{id}:
+    get:
+      description: Fetches the status and results of a text processing job
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.JobResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get a job by ID
+  /jobs:
+    get:
+      description: Fetches a list of all jobs currently in the system
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.JobResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List all jobs
+  /upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload a file for processing in the job queue
+      parameters:
+      - description: File to upload
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.JobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Upload a text file
+swagger: "2.0"

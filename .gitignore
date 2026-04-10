@@ -1,0 +1,24 @@
+# Binaries
+*.exe
+*.out
+test_main
+test_bin
+
+# Large test files (do not commit to GitHub)
+*.pdf
+15MB_test.csv
+25MB_test.pdf
+50MB_test.pdf
+1GB_test.pdf
+
+# Go build cache
+vendor/
+
+# Environment variables
+.env
+
+# macOS
+.DS_Store
+
+# Swagger generated docs (optional - can regenerate)
+# docs/
