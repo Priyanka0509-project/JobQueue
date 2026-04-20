@@ -8,7 +8,9 @@ package main
 
 import (
 	"fmt"
+	storage "jobQueue/cloudinary"
 	"jobQueue/controller"
+	_ "jobQueue/docs"
 	"jobQueue/handler"
 	"jobQueue/queue"
 	ratelimiter "jobQueue/ratelimiter"
@@ -18,7 +20,7 @@ import (
 	"os"
 	"time"
 
-	_ "jobQueue/docs"
+	"github.com/joho/godotenv"
 
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
@@ -28,13 +30,18 @@ func main() {
 	fmt.Println("  Job Queue V4 Starting...")
 	fmt.Println("==============================================")
 
-	mongoURI := os.Getenv("MONGO_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-		fmt.Println("[Boot] MONGO_URI not set — using localhost:27017")
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Println("Error loading .env file")
 	}
 
-	repo, err := repository.NewJobRepository(mongoURI)
+	cloudClient, err := storage.NewCloudinaryClient()
+	if err != nil {
+		fmt.Printf("[Boot] FATAL: Cloudinary config error: %v\n", err)
+		os.Exit(1)
+	}
+
+	repo, err := repository.NewJobRepository()
 	if err != nil {
 		fmt.Printf("[Boot] FATAL: Cannot connect to MongoDB: %v\n", err)
 		os.Exit(1)
@@ -45,7 +52,7 @@ func main() {
 	jobQueue := queue.NewQueue()
 	fmt.Println("queue")
 
-	jobService := service.NewJobService(repo, jobQueue)
+	jobService := service.NewJobService(repo, jobQueue, cloudClient)
 	fmt.Println("Service")
 
 	jobHandler := handler.NewJobHandler(jobQueue, jobService)

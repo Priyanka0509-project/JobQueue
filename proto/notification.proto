@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package notification;
+
+option go_package = "./proto";
+
+service NotificationService {
+  rpc StreamEvents (stream JobEvent) returns (Ack);
+}
+
+message JobEvent {
+  string job_id = 1;
+  string stage = 2;
+  int32 retry_count = 3;
+  string message = 4;
+  string file_name = 5;
+  string jobtype = 6;
+}
+
+message Ack {
+  string status = 1;
+}

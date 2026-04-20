@@ -2,7 +2,6 @@ package ratelimiter
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -67,7 +66,7 @@ func (rl *RateLimiter) Remaining(ip string) int {
 }
 
 func (rl *RateLimiter) cleanup() {
-	ticker := time.NewTicker(2 * time.Minute)
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -94,7 +93,7 @@ func (rl *RateLimiter) Ratelimiter(next http.HandlerFunc) http.HandlerFunc {
 			w.Header().Set("X-RateLimit-Remaining", "0")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests) // 429
-			w.Write([]byte(`{"error":"rate limit exceeded — max 2 uploads per minute"}`))
+			w.Write([]byte(`{"error":"rate limit exceeded — max 5 uploads per minute"}`))
 			return
 		}
 
@@ -106,14 +105,10 @@ func (rl *RateLimiter) Ratelimiter(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func getClientIP(r *http.Request) string {
+
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		return fwd
 	}
 
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-
-		return r.RemoteAddr
-	}
-	return ip
+	return r.RemoteAddr
 }

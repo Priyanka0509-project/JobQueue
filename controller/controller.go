@@ -20,7 +20,7 @@ type JobController struct {
 func NewJobController(svc *service.JobService, mux *http.ServeMux) *JobController {
 	c := &JobController{service: svc}
 
-	mux.HandleFunc("/job/", c.GetJob)
+	mux.HandleFunc("/job/{id}", c.GetJob)
 	mux.HandleFunc("/jobs", c.ListJobs)
 	mux.HandleFunc("/health", c.Health)
 	return c
@@ -36,6 +36,7 @@ func NewJobController(svc *service.JobService, mux *http.ServeMux) *JobControlle
 // @Failure 400 {object} map[string]string
 // @Router /upload [post]
 func (c *JobController) Upload(w http.ResponseWriter, r *http.Request) {
+
 	if r.Method != http.MethodPost {
 		writeError(w, "only POST allowed", http.StatusMethodNotAllowed)
 		return
@@ -47,64 +48,50 @@ func (c *JobController) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var uploadedFile io.Reader
-	var filename string
-
-	for {
-		part, err := mr.NextPart()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			writeError(w, "error reading part", http.StatusBadRequest)
-			return
-		}
-		if part.FormName() == "file" {
-			uploadedFile = part
-			filename = part.FileName()
-			break
-		}
-	}
-
-	if uploadedFile == nil {
-		writeError(w, "field 'file' is required", http.StatusBadRequest)
-		return
-	}
-
-	ext := strings.ToLower(filepath.Ext(filename))
-
-	allowedExtensions := map[string]bool{
-		".txt": true,
-		".pdf": true,
-		".csv": true,
-	}
-
-	if !allowedExtensions[ext] {
-		writeError(w, fmt.Sprintf("unsupported file extension: %s", ext), http.StatusBadRequest)
-		return
-	}
-
-	totalSize := r.ContentLength
-	if totalSize <= 0 {
-		totalSize = 50 * 1024 * 1024
-	}
-
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
+	// w.WriteHeader(http.StatusOK)
 
 	flusher, canFlush := w.(http.Flusher)
 
 	sendProgress := func(percent int, message string) {
-		line := fmt.Sprintf(`{"progress":%d,"message":"%s"}`, percent, message)
-		fmt.Fprintln(w, line)
-
+		fmt.Fprintf(w, `{"progress":%d,"message":"%s"}`+"\n", percent, message)
 		if canFlush {
 			flusher.Flush()
 		}
 	}
 
 	sendProgress(0, "Starting upload...")
+
+	part, err := mr.NextPart()
+	if err != nil {
+		writeError(w, "error reading file", http.StatusBadRequest)
+		return
+	}
+
+	if part.FormName() != "file" {
+		writeError(w, "file field missing", http.StatusBadRequest)
+		return
+	}
+
+	filename := part.FileName()
+
+	ext := strings.ToLower(filepath.Ext(filename))
+	allowed := map[string]bool{
+		".txt": true,
+		".pdf": true,
+		".csv": true,
+	}
+
+	if !allowed[ext] {
+		writeError(w, fmt.Sprintf("unsupported file type: %s", ext), http.StatusBadRequest)
+		return
+	}
+
+	totalSize := r.ContentLength
+	if totalSize <= 0 {
+		totalSize = 50 * 1024 * 1024 // fallback
+	}
 
 	var buf bytes.Buffer
 	chunk := make([]byte, 32*1024)
@@ -113,7 +100,7 @@ func (c *JobController) Upload(w http.ResponseWriter, r *http.Request) {
 	lastReportTime := time.Now()
 
 	for {
-		n, err := uploadedFile.Read(chunk)
+		n, err := part.Read(chunk)
 
 		if n > 0 {
 			buf.Write(chunk[:n])
@@ -125,7 +112,8 @@ func (c *JobController) Upload(w http.ResponseWriter, r *http.Request) {
 					percent = 100
 				}
 
-				if time.Since(lastReportTime) >= 5*time.Second {
+				// send progress every 1 second
+				if time.Since(lastReportTime) >= 3*time.Second {
 					sendProgress(percent,
 						fmt.Sprintf("Uploading... %d%%", percent))
 					lastReportTime = time.Now()
@@ -142,13 +130,15 @@ func (c *JobController) Upload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sendProgress(100, "Upload complete — creating job in MongoDB...")
+	sendProgress(100, "Upload complete — creating job...")
 
 	req := model.CreateJobRequest{
 		FileName: filename,
 		FileSize: int64(len(buf.Bytes())),
 		FileData: buf.Bytes(),
 	}
+
+	fmt.Println("DEBUG FILE SIZE:", len(buf.Bytes()))
 
 	response, err := c.service.CreateJob(req)
 	if err != nil {
@@ -163,11 +153,14 @@ func (c *JobController) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lastStatus := response.Status
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case <-time.After(200 * time.Millisecond):
+
+		case <-time.After(300 * time.Millisecond):
+
 			updatedJob, err := c.service.GetJobByID(response.ID)
 			if err != nil {
 				return
@@ -175,14 +168,17 @@ func (c *JobController) Upload(w http.ResponseWriter, r *http.Request) {
 
 			if updatedJob.Status != lastStatus {
 				lastStatus = updatedJob.Status
+
 				statusJSON, _ := json.Marshal(updatedJob)
 				fmt.Fprintln(w, string(statusJSON))
+
 				if canFlush {
 					flusher.Flush()
 				}
 			}
 
-			if updatedJob.Status == model.StatusCompleted || updatedJob.Status == model.StatusFailed {
+			if updatedJob.Status == model.StatusCompleted ||
+				updatedJob.Status == model.StatusFailed {
 				return
 			}
 		}
